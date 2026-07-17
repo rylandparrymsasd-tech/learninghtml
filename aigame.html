@@ -3,114 +3,650 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Canvas Game from Scratch</title>
+    <title>🎯 2-Player Stickman Archery (IJKL + ASDF)</title>
     <style>
-        /* Center everything on the screen */
+        /* ============================================================
+           STYLE: minimal, clean, just to frame the game
+           ============================================================ */
+        * {
+            box-sizing: border-box;
+            user-select: none; /* prevents accidental text selection */
+        }
         body {
+            background: #f0f2f5;
+            min-height: 100vh;
             margin: 0;
-            background-color: #222;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            font-family: Arial, sans-serif;
-            color: white;
-            flex-direction: column;
+            font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
         }
-        /* Style the game canvas */
+        .game-container {
+            background: white;
+            padding: 25px 30px 30px;
+            border-radius: 32px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.15);
+            text-align: center;
+        }
         canvas {
-            border: 4px solid #fff;
-            background-color: #111;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            display: block;
+            margin: 0 auto;
+            background: #fcfcfc;
+            border: 3px solid #1e1e1e;
+            border-radius: 18px;
+            box-shadow: inset 0 0 0 1px #d0d0d0;
+            width: 800px;
+            height: 450px;
+            cursor: crosshair;
         }
-        h1 { margin-bottom: 10px; }
+        .info-panel {
+            margin-top: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px 20px;
+            padding: 6px 10px 0 10px;
+            font-weight: 500;
+            color: #1e1e1e;
+        }
+        .controls {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .controls span {
+            background: #eaeef3;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-size: 0.9rem;
+            letter-spacing: 0.3px;
+            border: 1px solid #cdd5de;
+        }
+        .controls kbd {
+            background: #1e1e1e;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 0 4px;
+        }
+        button {
+            background: #1e1e1e;
+            border: none;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 8px 28px;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: 0.15s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            border: 1px solid #3a3a3a;
+        }
+        button:hover {
+            background: #2f2f2f;
+            transform: scale(1.01);
+        }
+        button:active {
+            transform: scale(0.96);
+        }
+        .score-badge {
+            background: #1e1e1e;
+            color: white;
+            padding: 5px 20px;
+            border-radius: 60px;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+        }
+        @media (max-width: 850px) {
+            canvas { width: 100%; height: auto; aspect-ratio: 800/450; }
+            .game-container { padding: 15px; }
+        }
     </style>
 </head>
 <body>
 
-    <h1>Score: <span id="scoreDisplay">0</span></h1>
-    <!-- The canvas where the game will be drawn -->
-    <canvas id="gameCanvas" width="600" height="400"></canvas>
+<div class="game-container">
+    <!-- ===== CANVAS: where the stickman battle happens ===== -->
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
 
-    <script>
-        // --- 1. SETUP GAME ENVIRONMENT ---
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d"); // The tool used to draw on canvas
-        const scoreDisplay = document.getElementById("scoreDisplay");
+    <!-- ===== INFO & CONTROLS ===== -->
+    <div class="info-panel">
+        <div class="score-badge" id="scoreDisplay">🏹 0 : 0</div>
+        <div class="controls">
+            <span>🟦 <kbd>A</kbd><kbd>D</kbd> move · <kbd>S</kbd> aim up · <kbd>F</kbd> shoot</span>
+            <span>🟥 <kbd>J</kbd><kbd>L</kbd> move · <kbd>I</kbd> aim up · <kbd>K</kbd> shoot</span>
+        </div>
+        <button id="resetButton">↻ New round</button>
+    </div>
+</div>
 
-        let score = 0;
+<script>
+    // ================================================================
+    //  🎯  TWO-PLAYER STICKMAN BOW & ARROW  (IJKL + ASDF)
+    //  ================================================================
+    //  Everything is commented.  Look for "✏️ EDIT" sections to change
+    //  colors, sizes, speed, etc.
+    // ================================================================
 
-        // --- 2. GAME OBJECTS ---
-        const player = {
-            x: 50,
-            y: 180,
-            size: 30,
-            speed: 5
+    // ---------- GET CANVAS & CONTEXT ----------
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+
+    // ---------- GAME DIMENSIONS ----------
+    const W = 800;          // canvas width
+    const H = 450;          // canvas height
+    const GROUND_Y = 420;   // y-position of the ground (feet level)
+
+    // ================================================================
+    //  ✏️ EDIT:  PLAYER 1 (BLUE)  —  change color, size, speed, etc.
+    // ================================================================
+    const PLAYER1 = {
+        color: '#1f77b4',       // body color (blue)
+        headRadius: 14,         // head size
+        bodyWidth: 4,           // thickness of body/arms/legs
+        legLength: 28,
+        armLength: 22,
+        speed: 3.2,             // movement speed (pixels per frame)
+        arrowSpeed: 7.5,        // arrow flight speed
+        shootCooldown: 18,      // frames between shots
+        // starting position (x)
+        startX: 110,
+    };
+
+    // ================================================================
+    //  ✏️ EDIT:  PLAYER 2 (RED)   —  change color, size, speed, etc.
+    // ================================================================
+    const PLAYER2 = {
+        color: '#d62728',       // body color (red)
+        headRadius: 14,         // head size
+        bodyWidth: 4,
+        legLength: 28,
+        armLength: 22,
+        speed: 3.2,
+        arrowSpeed: 7.5,
+        shootCooldown: 18,
+        startX: 690,
+    };
+
+    // ================================================================
+    //  ✏️ EDIT:  ARROW APPEARANCE
+    // ================================================================
+    const ARROW_CONFIG = {
+        shaftLength: 26,
+        shaftWidth: 3,
+        headSize: 10,
+        headColor: '#2c2c2c',
+    };
+
+    // ================================================================
+    //  GAME STATE  (do not change unless you know what you're doing)
+    // ================================================================
+    let players = [];
+    let arrows = [];
+    let scores = [0, 0];          // [player1Score, player2Score]
+    let gameActive = true;
+    let frameCount = 0;
+
+    // ---- keyboard state ----
+    const keys = {
+        // player 1 (ASDF)
+        a: false, d: false, s: false, f: false,
+        // player 2 (IJKL)
+        i: false, j: false, k: false, l: false
+    };
+
+    // ================================================================
+    //  HELPER: create a player object
+    // ================================================================
+    function createPlayer(config, index, startX) {
+        return {
+            // --- reference to config (for colors, sizes) ---
+            config: config,
+            // --- position ---
+            x: startX,
+            y: GROUND_Y,          // feet are on the ground
+            // --- facing direction: 1 = right, -1 = left ---
+            facing: (index === 0) ? 1 : -1,
+            // --- bow angle (radians) 0 = horizontal, negative = upward ---
+            aimAngle: -0.25,
+            // --- cooldown counter ---
+            cooldown: 0,
+            // --- player index ---
+            index: index,
         };
+    }
 
-        const target = {
-            x: Math.random() * (canvas.width - 30),
-            y: Math.random() * (canvas.height - 30),
-            size: 20
-        };
+    // ================================================================
+    //  RESET / INIT GAME
+    // ================================================================
+    function resetGame() {
+        // reset players
+        players = [
+            createPlayer(PLAYER1, 0, PLAYER1.startX),
+            createPlayer(PLAYER2, 1, PLAYER2.startX)
+        ];
+        // clear arrows
+        arrows = [];
+        // scores stay as they are (if you want reset scores, uncomment next line)
+        // scores = [0, 0];
+        gameActive = true;
+        updateScoreDisplay();
+    }
 
-        // Track keyboard inputs
-        const keys = {};
+    // ================================================================
+    //  RESET SCORES & GAME
+    // ================================================================
+    function fullReset() {
+        scores = [0, 0];
+        resetGame();
+    }
 
-        // --- 3. INPUT LISTENERS ---
-        window.addEventListener("keydown", (e) => { keys[e.code] = true; });
-        window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+    // ================================================================
+    //  UPDATE SCORE DISPLAY
+    // ================================================================
+    function updateScoreDisplay() {
+        scoreDisplay.textContent = `🏹 ${scores[0]} : ${scores[1]}`;
+    }
 
-        // --- 4. GAME LOGIC (UPDATE STATE) ---
-        function update() {
-            // Move player based on inputs
-            if (keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
-            if (keys["ArrowDown"] && player.y < canvas.height - player.size) player.y += player.speed;
-            if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
-            if (keys["ArrowRight"] && player.x < canvas.width - player.size) player.x += player.speed;
+    // ================================================================
+    //  SHOOT ARROW  (called from player input)
+    // ================================================================
+    function shootArrow(player) {
+        // safety: game active & cooldown ready
+        if (!gameActive) return;
+        if (player.cooldown > 0) return;
 
-            // Simple Collision Detection (Bounding Box)
-            if (
-                player.x < target.x + target.size &&
-                player.x + player.size > target.x &&
-                player.y < target.y + target.size &&
-                player.y + player.size > target.y
-            ) {
-                // Player hit the target!
-                score += 10;
-                scoreDisplay.innerText = score;
+        // set cooldown
+        player.cooldown = player.config.shootCooldown;
 
-                // Relocate target randomly
-                target.x = Math.random() * (canvas.width - target.size);
-                target.y = Math.random() * (canvas.height - target.size);
+        // arrow start position: tip of the bow (approximate)
+        const armLen = player.config.armLength;
+        const angle = player.aimAngle;
+        const dir = player.facing;
+
+        // bow hand is at shoulder height (slightly above center)
+        const shoulderY = player.y - 30; // shoulder height
+
+        // calculate arrow start (tip of bow)
+        const startX = player.x + dir * (12 + armLen * 0.7);
+        const startY = shoulderY + Math.sin(angle) * (armLen * 0.6);
+
+        // velocity
+        const speed = player.config.arrowSpeed;
+        const vx = Math.cos(angle) * dir * speed;
+        const vy = Math.sin(angle) * speed;
+
+        arrows.push({
+            x: startX,
+            y: startY,
+            vx: vx,
+            vy: vy,
+            owner: player.index,   // 0 or 1
+            active: true,
+            // for drawing
+            angle: angle,
+            dir: dir,
+        });
+    }
+
+    // ================================================================
+    //  UPDATE LOGIC  (called every frame)
+    // ================================================================
+    function update() {
+        if (!gameActive) return;
+
+        frameCount++;
+
+        // ---- 1) PLAYER MOVEMENT & AIM ----
+        players.forEach((p, idx) => {
+            // decrement cooldown
+            if (p.cooldown > 0) p.cooldown--;
+
+            const cfg = p.config;
+            let moveX = 0;
+
+            // ---- player 1: A / D ----
+            if (idx === 0) {
+                if (keys.a) moveX = -cfg.speed;
+                if (keys.d) moveX = cfg.speed;
+                // aim up (S key)
+                if (keys.s) {
+                    p.aimAngle = Math.max(p.aimAngle - 0.035, -1.2);
+                } else {
+                    // slowly return to horizontal
+                    if (p.aimAngle < 0) p.aimAngle = Math.min(p.aimAngle + 0.025, 0);
+                }
+                // shoot (F key)
+                if (keys.f) {
+                    shootArrow(p);
+                }
             }
+
+            // ---- player 2: J / L (move), I (aim up), K (shoot) ----
+            if (idx === 1) {
+                if (keys.j) moveX = -cfg.speed;
+                if (keys.l) moveX = cfg.speed;
+                if (keys.i) {
+                    p.aimAngle = Math.max(p.aimAngle - 0.035, -1.2);
+                } else {
+                    if (p.aimAngle < 0) p.aimAngle = Math.min(p.aimAngle + 0.025, 0);
+                }
+                if (keys.k) {
+                    shootArrow(p);
+                }
+            }
+
+            // apply horizontal movement (with boundaries)
+            const newX = p.x + moveX;
+            // keep inside canvas (with margin)
+            const margin = 30;
+            if (newX > margin && newX < W - margin) {
+                p.x = newX;
+            }
+
+            // update facing direction based on movement
+            if (moveX > 0.1) p.facing = 1;
+            else if (moveX < -0.1) p.facing = -1;
+        });
+
+        // ---- 2) ARROW UPDATE ----
+        for (let i = arrows.length - 1; i >= 0; i--) {
+            const a = arrows[i];
+            if (!a.active) {
+                arrows.splice(i, 1);
+                continue;
+            }
+
+            // move arrow
+            a.x += a.vx;
+            a.y += a.vy;
+            // add tiny gravity (makes arc more natural)
+            a.vy += 0.08;
+
+            // check bounds (off screen or below ground)
+            if (a.x < -20 || a.x > W + 20 || a.y > GROUND_Y + 10 || a.y < -50) {
+                a.active = false;
+                arrows.splice(i, 1);
+                continue;
+            }
+
+            // ---- collision with players ----
+            let hit = false;
+            for (let p of players) {
+                // don't hit yourself
+                if (p.index === a.owner) continue;
+
+                // simple collision: distance between arrow and player center
+                const dx = a.x - p.x;
+                const dy = a.y - (p.y - 28); // head center approx
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                // hit radius ~ head radius + some margin
+                const hitRadius = p.config.headRadius + 6;
+                if (dist < hitRadius) {
+                    // HIT!
+                    hit = true;
+                    a.active = false;
+                    // increase score for the shooter
+                    scores[a.owner] += 1;
+                    updateScoreDisplay();
+                    // reset positions (fair respawn)
+                    p.x = (p.index === 0) ? PLAYER1.startX : PLAYER2.startX;
+                    p.y = GROUND_Y;
+                    p.aimAngle = -0.2;
+                    // remove arrow
+                    arrows.splice(i, 1);
+                    break;
+                }
+            }
+            if (hit) continue;
         }
 
-        // --- 5. GRAPHICS (RENDER) ---
-        function render() {
-            // Clear the previous frame
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // ---- (optional) keep arrows array clean ----
+        arrows = arrows.filter(a => a.active);
+    }
 
-            // Draw Player (Blue Square)
-            ctx.fillStyle = "#3498db";
-            ctx.fillRect(player.x, player.y, player.size, player.size);
+    // ================================================================
+    //  DRAWING  (all stickman + arrows)
+    // ================================================================
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
 
-            // Draw Target (Red Square)
-            ctx.fillStyle = "#e74c3c";
-            ctx.fillRect(target.x, target.y, target.size, target.size);
+        // ---- draw ground line ----
+        ctx.beginPath();
+        ctx.strokeStyle = '#b0b8c0';
+        ctx.lineWidth = 2;
+        ctx.moveTo(0, GROUND_Y);
+        ctx.lineTo(W, GROUND_Y);
+        ctx.stroke();
+
+        // ---- draw arrows ----
+        arrows.forEach(a => {
+            const angle = Math.atan2(a.vy, a.vx);
+            const len = ARROW_CONFIG.shaftLength;
+            ctx.save();
+            ctx.translate(a.x, a.y);
+            ctx.rotate(angle);
+
+            // shaft
+            ctx.fillStyle = '#2d2d2d';
+            ctx.fillRect(0, -ARROW_CONFIG.shaftWidth/2, len, ARROW_CONFIG.shaftWidth);
+            // arrowhead
+            ctx.fillStyle = ARROW_CONFIG.headColor;
+            ctx.beginPath();
+            ctx.moveTo(len, 0);
+            ctx.lineTo(len - ARROW_CONFIG.headSize, -6);
+            ctx.lineTo(len - ARROW_CONFIG.headSize, 6);
+            ctx.closePath();
+            ctx.fill();
+            // fletching (tiny tail)
+            ctx.fillStyle = '#555';
+            ctx.fillRect(-6, -5, 4, 10);
+            ctx.restore();
+        });
+
+        // ---- draw players (stickmen) ----
+        players.forEach((p, idx) => {
+            const cfg = p.config;
+            const color = cfg.color;
+            const headR = cfg.headRadius;
+            const bodyW = cfg.bodyWidth;
+            const legLen = cfg.legLength;
+            const armLen = cfg.armLength;
+            const dir = p.facing;
+
+            // positions
+            const headX = p.x;
+            const headY = p.y - 30;          // head center
+            const shoulderY = headY + headR * 0.5;
+
+            // ---- BODY (spine) ----
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = bodyW;
+            ctx.lineCap = 'round';
+            ctx.moveTo(headX, headY + headR * 0.5);
+            ctx.lineTo(headX, headY + headR * 0.5 + 32);
+            ctx.stroke();
+
+            // ---- HEAD ----
+            ctx.beginPath();
+            ctx.arc(headX, headY, headR, 0, 2 * Math.PI);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // ---- LEGS ----
+            ctx.strokeStyle = color;
+            ctx.lineWidth = bodyW * 0.9;
+            const hipY = headY + headR * 0.5 + 32;
+            // left leg
+            ctx.beginPath();
+            ctx.moveTo(headX, hipY);
+            ctx.lineTo(headX - 10, hipY + legLen);
+            ctx.stroke();
+            // right leg
+            ctx.beginPath();
+            ctx.moveTo(headX, hipY);
+            ctx.lineTo(headX + 10, hipY + legLen);
+            ctx.stroke();
+
+            // ---- ARMS + BOW ----
+            ctx.lineWidth = bodyW * 0.8;
+            const angle = p.aimAngle;
+            // upper arm (from shoulder)
+            const upperLen = armLen * 0.6;
+            const upperEndX = headX + dir * upperLen * 0.7;
+            const upperEndY = shoulderY + Math.sin(angle) * upperLen * 0.5;
+
+            // upper arm line
+            ctx.beginPath();
+            ctx.moveTo(headX, shoulderY);
+            ctx.lineTo(upperEndX, upperEndY);
+            ctx.stroke();
+
+            // forearm (bow arm) + bow
+            const foreLen = armLen * 0.6;
+            const foreEndX = upperEndX + dir * foreLen * 0.9;
+            const foreEndY = upperEndY + Math.sin(angle - 0.2) * foreLen * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(upperEndX, upperEndY);
+            ctx.lineTo(foreEndX, foreEndY);
+            ctx.stroke();
+
+            // ---- DRAW THE BOW (curved) ----
+            ctx.strokeStyle = '#2c2c2c';
+            ctx.lineWidth = 3.5;
+            const bowX = foreEndX;
+            const bowY = foreEndY;
+            const bowLen = 18;
+            const bowAngle = angle + (dir > 0 ? 0.2 : -0.2);
+            ctx.beginPath();
+            ctx.arc(bowX, bowY, bowLen, bowAngle - 0.8, bowAngle + 0.8);
+            ctx.stroke();
+            // bowstring (thin)
+            ctx.strokeStyle = '#4a4a4a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(bowX + Math.cos(bowAngle - 0.8) * bowLen, bowY + Math.sin(bowAngle - 0.8) * bowLen);
+            ctx.lineTo(bowX + Math.cos(bowAngle + 0.8) * bowLen, bowY + Math.sin(bowAngle + 0.8) * bowLen);
+            ctx.stroke();
+
+            // ---- optional: aim line (tiny) ----
+            ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 6]);
+            ctx.beginPath();
+            ctx.moveTo(foreEndX, foreEndY);
+            const aimLen = 50;
+            ctx.lineTo(foreEndX + Math.cos(angle) * dir * aimLen, foreEndY + Math.sin(angle) * aimLen);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // ---- player label (1 or 2) ----
+            ctx.fillStyle = '#1a1a1a';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(idx+1, headX, headY - headR - 10);
+        });
+
+        // ---- game over / win message (if needed) ----
+        if (!gameActive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 36px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🏁 Game Over', W/2, H/2 - 10);
+            ctx.font = '18px system-ui';
+            ctx.fillText('press "New round"', W/2, H/2 + 40);
+        }
+    }
+
+    // ================================================================
+    //  GAME LOOP
+    // ================================================================
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ================================================================
+    //  KEYBOARD EVENTS  (updated for IJKL)
+    // ================================================================
+    function keyDownHandler(e) {
+        const key = e.key.toLowerCase();
+        // prevent scrolling with arrows / space (just in case)
+        if (['arrowup','arrowdown','arrowleft','arrowright',' ', 'space'].includes(e.key) || key === ' ') {
+            e.preventDefault();
         }
 
-        // --- 6. THE GAME LOOP ---
-        function gameLoop() {
-            update(); // Calculate positions and collisions
-            render(); // Draw the changes to the screen
-            
-            // Keeps the loop smooth and synced with the monitor refresh rate
-            requestAnimationFrame(gameLoop); 
+        // ---- player 1 (ASDF) ----
+        if (key === 'a') keys.a = true;
+        if (key === 'd') keys.d = true;
+        if (key === 's') keys.s = true;
+        if (key === 'f') keys.f = true;
+
+        // ---- player 2 (IJKL) ----
+        if (key === 'i') keys.i = true;
+        if (key === 'j') keys.j = true;
+        if (key === 'k') keys.k = true;
+        if (key === 'l') keys.l = true;
+
+        // quick restart with 'r'
+        if (key === 'r') {
+            fullReset();
+        }
+    }
+
+    function keyUpHandler(e) {
+        const key = e.key.toLowerCase();
+        if (['arrowup','arrowdown','arrowleft','arrowright',' ', 'space'].includes(e.key) || key === ' ') {
+            e.preventDefault();
         }
 
-        // Start the game!
-        gameLoop();
-    </script>
+        // player 1
+        if (key === 'a') keys.a = false;
+        if (key === 'd') keys.d = false;
+        if (key === 's') keys.s = false;
+        if (key === 'f') keys.f = false;
+
+        // player 2 (IJKL)
+        if (key === 'i') keys.i = false;
+        if (key === 'j') keys.j = false;
+        if (key === 'k') keys.k = false;
+        if (key === 'l') keys.l = false;
+    }
+
+    // ================================================================
+    //  INIT
+    // ================================================================
+    window.addEventListener('keydown', keyDownHandler);
+    window.addEventListener('keyup', keyUpHandler);
+
+    // reset button
+    document.getElementById('resetButton').addEventListener('click', fullReset);
+
+    // start game
+    fullReset();
+    gameLoop();
+
+    // ================================================================
+    //  ✏️  EASY EDIT SUMMARY:
+    //  - PLAYER1 / PLAYER2: change color, headRadius, speed, etc.
+    //  - ARROW_CONFIG: change arrow look
+    //  - GROUND_Y: move ground up/down
+    //  - players start position: startX in PLAYER1/PLAYER2
+    //  - shootCooldown: lower = faster shooting
+    //  - CONTROLS: Player 2 now uses I (aim up), J (left), K (shoot), L (right)
+    // ================================================================
+</script>
 </body>
 </html>
+
