@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Fullscreen Open-World RPG</title>
+    <style>
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0c;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+        #gameWrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #uiOverlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            pointer-events: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .hud-panel {
+            background: rgba(15, 15, 25, 0.85);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(8px);
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            gap: 25px;
+        }
+        #hpDisplay { color: #ff4757; }
+        #goldDisplay { color: #ffa502; }
+        #zoneDisplay { color: #2ed573; }
+        #logPanel {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            background: rgba(10, 10, 15, 0.9);
+            border-left: 5px solid #ffa502;
+            padding: 15px 20px;
+            border-radius: 4px;
+            font-size: 16px;
+            text-align: center;
+            color: #f1f2f6;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="gameWrapper">
+    <div id="uiOverlay">
+        <div class="hud-panel">
+            <span id="hpDisplay">❤️ HP: 100</span>
+            <span id="goldDisplay">🪙 Gold: 0</span>
+        </div>
+        <div class="hud-panel">
+            <span id="zoneDisplay">📍 Zone: Wilderness</span>
+        </div>
+    </div>
+    
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="logPanel">Use WASD or Arrow Keys to move. Watch out for roving monsters!</div>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Constants
+const tileSize = 48; // Crisp larger tile size for screen scaling
+const worldSize = 64;
+
+// Tile ID Maps
+const TILE_GRASS = 0;
+const TILE_FOREST = 1;
+const TILE_WATER = 2;
+const TILE_TOWN = 3;
+const TILE_DUNGEON = 4;
+const TILE_TREASURE = 5;
+
+const tileColors = {
+    [TILE_GRASS]: "#3B7A57",
+    [TILE_FOREST]: "#1B4D3E",
+    [TILE_WATER]: "#1D4ED8",
+    [TILE_TOWN]: "#8B5A2B",
+    [TILE_DUNGEON]: "#374151"
+};
+
+// Player setup
+let player = { x: 32, y: 32, hp: 100, gold: 0 };
+
+// Animation clock trackers
+let coinRotationFrame = 0;
+
+// Dynamic Entity Arrays
+let activeMonsters = [];
+
+// Initialize World Array
+let worldMap = [];
+for (let x = 0; x < worldSize; x++) {
+    worldMap[x] = [];
+    for (let y = 0; y < worldSize; y++) {
+        let type = TILE_GRASS;
+        if (x < 3 || x > worldSize - 4 || y < 3 || y > worldSize - 4) {
+            type = TILE_WATER;
+        } else {
+            let rand = Math.random();
+            if (rand  !(m.x === tx && m.y === ty));
+    }
+}
+worldMap[32][32] = TILE_TOWN;
+
+// Handle canvas resizing for absolute full window viewport execution
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    drawGame();
+}
+window.addEventListener('resize', resizeCanvas);
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// Input tracking 
+document.addEventListener("keydown", (e) => {
+    let nextX = player.x;
+    let nextY = player.y;
+
+    if (e.key.toLowerCase() === "w" || e.key === "ArrowUp") nextY--;
+    if (e.key.toLowerCase() === "s" || e.key === "ArrowDown") nextY++;
+    if (e.key.toLowerCase() === "a" || e.key === "ArrowLeft") nextX--;
+    if (e.key.toLowerCase() === "d" || e.key === "ArrowRight") nextX++;
+
+    if (nextX >= 0 && nextX < worldSize && nextY >= 0 && nextY < worldSize) {
+        if (worldMap[nextX][nextY] === TILE_WATER) {
+            updateLog("The water currents are too dangerous to step in!");
+            return;
+        }
+        player.x = nextX;
+        player.y = nextY;
+        
+        // Run AI behavior cycle right after player makes a step mechanics choice
+        updateMonstersAI();
+        handleTileInteraction(nextX, nextY);
+    }
+});
+
+// AI Movement Core Logic loop
+function updateMonstersAI() {
+    activeMonsters.forEach(monster => {
+        // Simple random directional walking patterns (up, down, left, right, stay)
+        let dir = Math.floor(Math.random() * 5);
+        let mx = monster.x;
+        let my = monster.y;
+
+        if (dir === 0) my--;
+        if (dir === 1) my++;
+        if (dir === 2) mx--;
+        if (dir === 3) mx++;
+
+        // Only allow movement onto land/grass structures
+        if (mx >= 0 && mx < worldSize && my >= 0 && my < worldSize) {
+            let targetTile = worldMap[mx][my];
+            if (targetTile === TILE_GRASS || targetTile === TILE_FOREST) {
+                monster.x = mx;
+                monster.y = my;
+            }
+        }
+    });
+
+    // Check post-move collisions with the player
+    checkMonsterCollisions();
+}
+
+function checkMonsterCollisions() {
+    for (let i = 0; i < activeMonsters.length; i++) {
+        if (activeMonsters[i].x === player.x && activeMonsters[i].y === player.y) {
+            let dmg = Math.floor(Math.random() * 12) + 12;
+            player.hp -= dmg;
+            activeMonsters.splice(i, 1); // Kill the monster block instance
+            
+            if (player.hp <= 0) {
+                player.hp = 0;
+                alert("⚔️ You were slain in battle! Reloading map...");
+                window.location.reload();
+            } else {
+                updateLog(`⚔️ Ambushed by a roaming Shadow Orc! You lost ${dmg} HP.`);
+            }
+            updateHUD();
+            break;
+        }
+    }
+}
+
+function handleTileInteraction(x, y) {
+    let tile = worldMap[x][y];
+    
+    if (tile === TILE_TOWN) {
+        document.getElementById("zoneDisplay").innerText = "📍 Zone: Sanctuary Town";
+        if(player.hp < 100) {
+            player.hp = 100;
+            updateLog("❤️ Rested inside safe walls. Your wounds are healed!");
+        } else {
+            updateLog("🏡 Safe within town limits.");
+        }
+    } else if (tile === TILE_TREASURE) {
+        player.gold += Math.floor(Math.random() * 30) + 20;
+        worldMap[x][y] = TILE_GRASS;
+        updateLog("🪙 You discovered an ancient golden relic coin chest!");
+    } else if (tile === TILE_FOREST) {
+        document.getElementById("zoneDisplay").innerText = "📍 Zone: Whispering Woods";
+        updateLog("🌲 The trees grow tightly together here.");
+    } else if (tile === TILE_DUNGEON) {
+        document.getElementById("zoneDisplay").innerText = "📍 Zone: Skeleton Keep";
+        updateLog("💀 An dark dungeon hatch creaks below your feet.");
+    } else {
+        document.getElementById("zoneDisplay").innerText = "📍 Zone: Frontier Plains";
+        updateLog("🌿 Exploring the vast open wilderness...");
+    }
+    
+    // Safety check if you stepped directly onto a monster tile coordinates
+    checkMonsterCollisions();
+    updateHUD();
+}
+
+function updateHUD() {
+    document.getElementById("hpDisplay").innerText = `❤️ HP: ${player.hp}`;
+    document.getElementById("goldDisplay").innerText = `🪙 Gold: ${player.gold}`;
+}
+
+function updateLog(msg) {
+    document.getElementById("logPanel").innerText = msg;
+}
+
+// Custom specialized Vector Drawing Methods 
+function draw3DCoin(ctx, cx, cy, size, pulseFactor) {
+    let scaleX = Math.abs(Math.sin(pulseFactor)); // Horizontal compression mimics 3D spin rotation
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, 1);
+    
+    // Outer Coin Rim Shadow effect
+    ctx.fillStyle = "#B8860B";
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core Face
+    ctx.fillStyle = "#FFD700";
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // inner emblem details
+    ctx.strokeStyle = "#DAA520";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawMonster(ctx, cx, cy, size) {
+    // Body base
+    ctx.fillStyle = "#2D3748";
+    ctx.beginPath();
+    ctx.arc(cx, cy, size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Threatening Red Glowing Eyes
+    ctx.fillStyle = "#FF0055";
+    ctx.beginPath();
+    ctx.arc(cx - size*0.4, cy - size*0.2, size*0.25, 0, Math.PI*2);
+    ctx.arc(cx + size*0.4, cy - size*0.2, size*0.25, 0, Math.PI*2);
+    ctx.fill();
+
