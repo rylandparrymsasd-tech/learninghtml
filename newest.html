@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Fullscreen Open-World RPG</title>
+    <title>Working Fullscreen Open-World RPG</title>
     <style>
         * { box-sizing: border-box; }
         body, html {
@@ -15,6 +15,7 @@
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
+            user-select: none;
         }
         #gameWrapper {
             position: relative;
@@ -35,40 +36,76 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            z-index: 10;
         }
         .hud-panel {
             background: rgba(15, 15, 25, 0.85);
-            padding: 15px 25px;
+            padding: 12px 20px;
             border-radius: 12px;
             border: 2px solid rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(8px);
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
             letter-spacing: 0.5px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             display: flex;
-            gap: 25px;
+            gap: 20px;
         }
         #hpDisplay { color: #ff4757; }
         #goldDisplay { color: #ffa502; }
         #zoneDisplay { color: #2ed573; }
+        
         #logPanel {
             position: absolute;
-            bottom: 30px;
+            bottom: 120px;
             left: 50%;
             transform: translateX(-50%);
             width: 90%;
-            max-width: 600px;
+            max-width: 500px;
             background: rgba(10, 10, 15, 0.9);
             border-left: 5px solid #ffa502;
-            padding: 15px 20px;
+            padding: 12px 15px;
             border-radius: 4px;
-            font-size: 16px;
+            font-size: 14px;
             text-align: center;
             color: #f1f2f6;
             box-shadow: 0 10px 25px rgba(0,0,0,0.6);
             pointer-events: none;
+            z-index: 10;
         }
+
+        /* Virtual D-Pad for Mobile Players */
+        #mobileControls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(3, 50px);
+            grid-template-rows: repeat(2, 45px);
+            gap: 8px;
+            z-index: 20;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+        .btn:active {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        #btnUp { grid-column: 2; }
+        #btnLeft { grid-column: 1; grid-row: 2; }
+        #btnDown { grid-column: 2; grid-row: 2; }
+        #btnRight { grid-column: 3; grid-row: 2; }
     </style>
 </head>
 <body>
@@ -80,24 +117,29 @@
             <span id="goldDisplay">🪙 Gold: 0</span>
         </div>
         <div class="hud-panel">
-            <span id="zoneDisplay">📍 Zone: Wilderness</span>
+            <span id="zoneDisplay">📍 Zone: Safe Town</span>
         </div>
     </div>
     
     <canvas id="gameCanvas"></canvas>
     
-    <div id="logPanel">Use WASD or Arrow Keys to move. Watch out for roving monsters!</div>
+    <div id="logPanel">Move using WASD, Arrow Keys, or the on-screen buttons!</div>
+
+    <div id="mobileControls">
+        <div class="btn" id="btnUp" onclick="movePlayer(0, -1)">▲</div>
+        <div class="btn" id="btnLeft" onclick="movePlayer(-1, 0)">◀</div>
+        <div class="btn" id="btnDown" onclick="movePlayer(0, 1)">▼</div>
+        <div class="btn" id="btnRight" onclick="movePlayer(1, 0)">▶</div>
+    </div>
 </div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Constants
-const tileSize = 48; // Crisp larger tile size for screen scaling
+const tileSize = 48; 
 const worldSize = 64;
 
-// Tile ID Maps
 const TILE_GRASS = 0;
 const TILE_FOREST = 1;
 const TILE_WATER = 2;
@@ -113,17 +155,12 @@ const tileColors = {
     [TILE_DUNGEON]: "#374151"
 };
 
-// Player setup
 let player = { x: 32, y: 32, hp: 100, gold: 0 };
-
-// Animation clock trackers
 let coinRotationFrame = 0;
-
-// Dynamic Entity Arrays
 let activeMonsters = [];
-
-// Initialize World Array
 let worldMap = [];
+
+// Generate the Map Grid Layout Safely
 for (let x = 0; x < worldSize; x++) {
     worldMap[x] = [];
     for (let y = 0; y < worldSize; y++) {
@@ -132,49 +169,62 @@ for (let x = 0; x < worldSize; x++) {
             type = TILE_WATER;
         } else {
             let rand = Math.random();
-            if (rand  !(m.x === tx && m.y === ty));
+            if (rand < 0.12) type = TILE_FOREST;
+            else if (rand < 0.15) type = TILE_WATER;
+            else if (rand < 0.17) type = TILE_DUNGEON;
+            else if (rand < 0.19) type = TILE_TREASURE;
+            else if (rand < 0.22) {
+                activeMonsters.push({ x: x, y: y });
+            }
+        }
+        worldMap[x][y] = type;
     }
 }
-worldMap[32][32] = TILE_TOWN;
 
-// Handle canvas resizing for absolute full window viewport execution
+// Fixed: Correctly applying the town center tile mechanics without wiping the layout array
+for(let tx = 29; tx <= 35; tx++) {
+    for(let ty = 29; ty <= 35; ty++) {
+        worldMap[tx][ty] = TILE_TOWN; 
+        activeMonsters = activeMonsters.filter(m => !(m.x === tx && m.y === ty));
+    }
+}
+
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    drawGame();
 }
 window.addEventListener('resize', resizeCanvas);
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+resizeCanvas();
 
-// Input tracking 
+// Input Mechanics Engine
 document.addEventListener("keydown", (e) => {
-    let nextX = player.x;
-    let nextY = player.y;
+    let dx = 0, dy = 0;
+    if (e.key.toLowerCase() === "w" || e.key === "ArrowUp") dy = -1;
+    if (e.key.toLowerCase() === "s" || e.key === "ArrowDown") dy = 1;
+    if (e.key.toLowerCase() === "a" || e.key === "ArrowLeft") dx = -1;
+    if (e.key.toLowerCase() === "d" || e.key === "ArrowRight") dx = 1;
+    if (dx !== 0 || dy !== 0) movePlayer(dx, dy);
+});
 
-    if (e.key.toLowerCase() === "w" || e.key === "ArrowUp") nextY--;
-    if (e.key.toLowerCase() === "s" || e.key === "ArrowDown") nextY++;
-    if (e.key.toLowerCase() === "a" || e.key === "ArrowLeft") nextX--;
-    if (e.key.toLowerCase() === "d" || e.key === "ArrowRight") nextX++;
+function movePlayer(dx, dy) {
+    let nextX = player.x + dx;
+    let nextY = player.y + dy;
 
     if (nextX >= 0 && nextX < worldSize && nextY >= 0 && nextY < worldSize) {
         if (worldMap[nextX][nextY] === TILE_WATER) {
-            updateLog("The water currents are too dangerous to step in!");
+            updateLog("🌊 The water currents are too dangerous to swim across!");
             return;
         }
         player.x = nextX;
         player.y = nextY;
         
-        // Run AI behavior cycle right after player makes a step mechanics choice
         updateMonstersAI();
         handleTileInteraction(nextX, nextY);
     }
-});
+}
 
-// AI Movement Core Logic loop
 function updateMonstersAI() {
     activeMonsters.forEach(monster => {
-        // Simple random directional walking patterns (up, down, left, right, stay)
         let dir = Math.floor(Math.random() * 5);
         let mx = monster.x;
         let my = monster.y;
@@ -184,17 +234,14 @@ function updateMonstersAI() {
         if (dir === 2) mx--;
         if (dir === 3) mx++;
 
-        // Only allow movement onto land/grass structures
         if (mx >= 0 && mx < worldSize && my >= 0 && my < worldSize) {
             let targetTile = worldMap[mx][my];
-            if (targetTile === TILE_GRASS || targetTile === TILE_FOREST) {
+            if (targetTile !== TILE_WATER && targetTile !== TILE_TOWN) {
                 monster.x = mx;
                 monster.y = my;
             }
         }
     });
-
-    // Check post-move collisions with the player
     checkMonsterCollisions();
 }
 
@@ -203,14 +250,17 @@ function checkMonsterCollisions() {
         if (activeMonsters[i].x === player.x && activeMonsters[i].y === player.y) {
             let dmg = Math.floor(Math.random() * 12) + 12;
             player.hp -= dmg;
-            activeMonsters.splice(i, 1); // Kill the monster block instance
+            activeMonsters.splice(i, 1); 
             
             if (player.hp <= 0) {
                 player.hp = 0;
-                alert("⚔️ You were slain in battle! Reloading map...");
-                window.location.reload();
+                updateHUD();
+                setTimeout(() => {
+                    alert("⚔️ You were slain in battle! Reloading map...");
+                    window.location.reload();
+                }, 100);
             } else {
-                updateLog(`⚔️ Ambushed by a roaming Shadow Orc! You lost ${dmg} HP.`);
+                updateLog(`⚔️ Ambushed by a roving Shadow Orc! You lost ${dmg} HP.`);
             }
             updateHUD();
             break;
@@ -222,29 +272,27 @@ function handleTileInteraction(x, y) {
     let tile = worldMap[x][y];
     
     if (tile === TILE_TOWN) {
-        document.getElementById("zoneDisplay").innerText = "📍 Zone: Sanctuary Town";
+        document.getElementById("zoneDisplay").innerText = "📍 Zone: Safe Town";
         if(player.hp < 100) {
             player.hp = 100;
-            updateLog("❤️ Rested inside safe walls. Your wounds are healed!");
+            updateLog("❤️ Rested inside safe walls. Your wounds are completely healed!");
         } else {
-            updateLog("🏡 Safe within town limits.");
+            updateLog("🏡 Walking safely within town limits.");
         }
     } else if (tile === TILE_TREASURE) {
         player.gold += Math.floor(Math.random() * 30) + 20;
         worldMap[x][y] = TILE_GRASS;
-        updateLog("🪙 You discovered an ancient golden relic coin chest!");
+        updateLog("🪙 You discovered an ancient chest loaded with golden relic coins!");
     } else if (tile === TILE_FOREST) {
         document.getElementById("zoneDisplay").innerText = "📍 Zone: Whispering Woods";
-        updateLog("🌲 The trees grow tightly together here.");
+        updateLog("🌲 The trees grow tightly together here. Watch your step.");
     } else if (tile === TILE_DUNGEON) {
         document.getElementById("zoneDisplay").innerText = "📍 Zone: Skeleton Keep";
-        updateLog("💀 An dark dungeon hatch creaks below your feet.");
+        updateLog("💀 An eerie underground dungeon hatch creaks below your feet.");
     } else {
         document.getElementById("zoneDisplay").innerText = "📍 Zone: Frontier Plains";
         updateLog("🌿 Exploring the vast open wilderness...");
     }
-    
-    // Safety check if you stepped directly onto a monster tile coordinates
     checkMonsterCollisions();
     updateHUD();
 }
@@ -258,45 +306,11 @@ function updateLog(msg) {
     document.getElementById("logPanel").innerText = msg;
 }
 
-// Custom specialized Vector Drawing Methods 
 function draw3DCoin(ctx, cx, cy, size, pulseFactor) {
-    let scaleX = Math.abs(Math.sin(pulseFactor)); // Horizontal compression mimics 3D spin rotation
+    let scaleX = Math.abs(Math.sin(pulseFactor)); 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(scaleX, 1);
     
-    // Outer Coin Rim Shadow effect
     ctx.fillStyle = "#B8860B";
     ctx.beginPath();
-    ctx.arc(0, 0, size, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Core Face
-    ctx.fillStyle = "#FFD700";
-    ctx.beginPath();
-    ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2);
-    ctx.fill();
-
-    // inner emblem details
-    ctx.strokeStyle = "#DAA520";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-}
-
-function drawMonster(ctx, cx, cy, size) {
-    // Body base
-    ctx.fillStyle = "#2D3748";
-    ctx.beginPath();
-    ctx.arc(cx, cy, size, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Threatening Red Glowing Eyes
-    ctx.fillStyle = "#FF0055";
-    ctx.beginPath();
-    ctx.arc(cx - size*0.4, cy - size*0.2, size*0.25, 0, Math.PI*2);
-    ctx.arc(cx + size*0.4, cy - size*0.2, size*0.25, 0, Math.PI*2);
-    ctx.fill();
-
