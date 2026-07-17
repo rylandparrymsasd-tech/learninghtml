@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Canvas Game from Scratch</title>
+    <style>
+        /* Center everything on the screen */
+        body {
+            margin: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            color: white;
+            flex-direction: column;
+        }
+        /* Style the game canvas */
+        canvas {
+            border: 4px solid #fff;
+            background-color: #111;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        h1 { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>Score: <span id="scoreDisplay">0</span></h1>
+    <!-- The canvas where the game will be drawn -->
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+
+    <script>
+        // --- 1. SETUP GAME ENVIRONMENT ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d"); // The tool used to draw on canvas
+        const scoreDisplay = document.getElementById("scoreDisplay");
+
+        let score = 0;
+
+        // --- 2. GAME OBJECTS ---
+        const player = {
+            x: 50,
+            y: 180,
+            size: 30,
+            speed: 5
+        };
+
+        const target = {
+            x: Math.random() * (canvas.width - 30),
+            y: Math.random() * (canvas.height - 30),
+            size: 20
+        };
+
+        // Track keyboard inputs
+        const keys = {};
+
+        // --- 3. INPUT LISTENERS ---
+        window.addEventListener("keydown", (e) => { keys[e.code] = true; });
+        window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+
+        // --- 4. GAME LOGIC (UPDATE STATE) ---
+        function update() {
+            // Move player based on inputs
+            if (keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
+            if (keys["ArrowDown"] && player.y < canvas.height - player.size) player.y += player.speed;
+            if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
+            if (keys["ArrowRight"] && player.x < canvas.width - player.size) player.x += player.speed;
+
+            // Simple Collision Detection (Bounding Box)
+            if (
+                player.x < target.x + target.size &&
+                player.x + player.size > target.x &&
+                player.y < target.y + target.size &&
+                player.y + player.size > target.y
+            ) {
+                // Player hit the target!
+                score += 10;
+                scoreDisplay.innerText = score;
+
+                // Relocate target randomly
+                target.x = Math.random() * (canvas.width - target.size);
+                target.y = Math.random() * (canvas.height - target.size);
+            }
+        }
+
+        // --- 5. GRAPHICS (RENDER) ---
+        function render() {
+            // Clear the previous frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Player (Blue Square)
+            ctx.fillStyle = "#3498db";
+            ctx.fillRect(player.x, player.y, player.size, player.size);
+
+            // Draw Target (Red Square)
+            ctx.fillStyle = "#e74c3c";
+            ctx.fillRect(target.x, target.y, target.size, target.size);
+        }
+
+        // --- 6. THE GAME LOOP ---
+        function gameLoop() {
+            update(); // Calculate positions and collisions
+            render(); // Draw the changes to the screen
+            
+            // Keeps the loop smooth and synced with the monitor refresh rate
+            requestAnimationFrame(gameLoop); 
+        }
+
+        // Start the game!
+        gameLoop();
+    </script>
+</body>
+</html>
