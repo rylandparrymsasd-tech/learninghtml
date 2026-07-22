@@ -3,136 +3,229 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Web Minecraft Fix</title>
+    <title>BedWars 2D - Fixed Layout</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; user-select: none; background: #000; }
-        canvas { display: block; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
-        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: white; }
-        #crosshair::before { top: 4px; left: 0; width: 10px; height: 2px; }
-        #crosshair::after { top: 0; left: 4px; width: 2px; height: 10px; }
-        #inventory { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; background: rgba(0,0,0,0.6); padding: 8px; border-radius: 5px; pointer-events: none; }
-        .slot { width: 55px; height: 55px; margin: 0 5px; border: 3px solid #444; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 11px; text-shadow: 1px 1px 2px black; border-radius: 4px; }
-        .slot.active { border-color: #fff; background: rgba(255,255,255,0.3); }
-        #instructions { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.75); padding: 12px; border-radius: 5px; font-size: 13px; line-height: 1.5; pointer-events: none; }
+        body {
+            margin: 0;
+            background: #0f172a;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-box {
+            position: relative;
+            background: #1e293b;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        canvas {
+            background: #020617;
+            display: block;
+            border: 2px solid #475569;
+        }
     </style>
 </head>
 <body>
-    <div id="crosshair"></div>
-    <div id="instructions"><strong>Controls:</strong><br>• Click to Lock Mouse<br>• WASD / Spacebar = Move / Jump<br>• Clicks = Build / Destroy<br>• 1-4 = Item Switch</div>
-    <div id="inventory">
-        <div id="slot-1" class="slot active" style="background: #348C31;">Grass<br>[1]</div>
-        <div id="slot-2" class="slot" style="background: #8B5A2B;">Dirt<br>[2]</div>
-        <div id="slot-3" class="slot" style="background: #707070;">Stone<br>[3]</div>
-        <div id="slot-4" class="slot" style="background: rgba(135,206,250,0.5);">Glass<br>[4]</div>
-    </div>
-    <script src="https://cloudflare.com"></script>
-    <script src="https://jsdelivr.net"></script>
-    <script>
-        // --- Core Engine Configuration ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
-        camera.position.set(0, 12, 5);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
-        const controls = new THREE.PointerLockControls(camera, document.body);
-        document.body.addEventListener('click', () => controls.lock());
 
-        // --- Lighting & Materials ---
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
-        dirLight.position.set(40, 80, 30);
-        scene.add(dirLight);
-        const blockTypes = { 1: 0x448833, 2: 0x7A4F2A, 3: 0x666666, 4: 0xADD8E6 };
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const materials = {};
-        Object.keys(blockTypes).forEach(id => materials[id] = new THREE.MeshLambertMaterial({color: blockTypes[id]}));
+<div id="game-box">
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+</div>
 
-        // --- World Generation & Data ---
-        let activeBlockType = 1;
-        const blocksArray = [], blockGridMap = new Map();
-        function createGridKey(x,y,z) { return `${Math.round(x)},${Math.round(y)},${Math.round(z)}`; }
-        function spawnInstanceBlock(x, y, z, typeId) {
-            const key = createGridKey(x,y,z);
-            if (blockGridMap.has(key)) return;
-            const mesh = new THREE.Mesh(geometry, materials[typeId]);
-            mesh.position.set(x, y, z);
-            mesh.userData = { typeId: parseInt(typeId) };
-            scene.add(mesh);
-            blocksArray.push(mesh);
-            blockGridMap.set(key, mesh);
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- HIGH VISIBILITY STABLE PLATFORMS ---
+    // Pure bounding boxes: If player is inside these coordinates, they are on solid ground.
+    const islands = [
+        { x: 30, y: 150, w: 220, h: 200, color: '#16a34a', name: 'BLUE BASE' },
+        { x: 650, y: 150, w: 220, h: 200, color: '#16a34a', name: 'RED BASE' },
+        { x: 320, y: 100, w: 260, h: 300, color: '#15803d', name: 'CENTER MID' }
+    ];
+
+    // Built blocks array (simplified)
+    let bridges = [];
+    let fireballs = [];
+    let keys = {};
+
+    // --- PLAYER CONFIGURATION ---
+    let p1 = { id: 1, x: 120, y: 250, radius: 15, speed: 4, color: '#0ea5e9', facing: 1, bedAlive: true, spawnX: 120, spawnY: 250 };
+    let p2 = { id: 2, x: 780, y: 250, radius: 15, speed: 4, color: '#f43f5e', facing: -1, bedAlive: true, spawnX: 780, spawnY: 250 };
+
+    // --- TEAM MATCH BEDS ---
+    let beds = {
+        blue: { x: 50, y: 230, w: 50, h: 40, active: true, color: '#2563eb' },
+        red: { x: 800, y: 230, w: 50, h: 40, active: true, color: '#dc2626' }
+    };
+
+    // --- INPUT REGISTER ---
+    window.addEventListener('keydown', e => {
+        const k = e.key.toLowerCase();
+        keys[k] = true;
+
+        // Action Keys (Instant click)
+        if (k === 'e') placeBridgeSegment(p1);
+        if (k === 'q') launchFireball(p1, 1);
+        if (k === '1') placeBridgeSegment(p2);
+        if (k === '0') launchFireball(p2, -1);
+    });
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    // --- REBUILT SIMPLIFIED COLLISION LOGIC ---
+    function checkOnGround(x, y) {
+        // Check natural solid islands
+        let standingOnIsland = islands.some(isl => x >= isl.x && x <= isl.x + isl.w && y >= isl.y && y <= isl.y + isl.h);
+        if (standingOnIsland) return true;
+
+        // Check player built blocks
+        let standingOnBridge = bridges.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+        return standingOnBridge;
+    }
+
+    function placeBridgeSegment(player) {
+        // Places a generous 40x40 block right in front of where the player faces
+        let bx = player.x + (player.facing * 25) - 20;
+        let by = player.y - 20;
+        bridges.push({ x: bx, y: by, w: 40, h: 40, color: player.id === 1 ? '#60a5fa' : '#fb7185' });
+    }
+
+    function launchFireball(player, dir) {
+        fireballs.push({ x: player.x, y: player.y, vx: dir * 7, r: 8, owner: player.id });
+    }
+
+    function triggerRespawn(player) {
+        player.x = player.spawnX;
+        player.y = player.spawnY;
+
+        if (!player.bedAlive) {
+            alert(`GAME OVER: Player ${player.id === 1 ? '2 (Red)' : '1 (Blue)'} wins!`);
+            // Reset world
+            beds.blue.active = true; beds.red.active = true;
+            p1.bedAlive = true; p2.bedAlive = true;
+            bridges = []; fireballs = [];
+        }
+    }
+
+    // --- GAME PROCESS ENGINE ---
+    function updateGame() {
+        // Player 1 Engine (WASD)
+        if (keys['w']) p1.y -= p1.speed;
+        if (keys['s']) p1.y += p1.speed;
+        if (keys['a']) { p1.x -= p1.speed; p1.facing = -1; }
+        if (keys['d']) { p1.x += p1.speed; p1.facing = 1; }
+
+        // Player 2 Engine (Arrow Keys)
+        if (keys['arrowup']) p2.y -= p2.speed;
+        if (keys['arrowdown']) p2.y += p2.speed;
+        if (keys['arrowleft']) { p2.x -= p2.speed; p2.facing = -1; }
+        if (keys['arrowright']) { p2.x += p2.speed; p2.facing = 1; }
+
+        // Fall check (Only checks if they aren't on safe ground)
+        if (!checkOnGround(p1.x, p1.y)) triggerRespawn(p1);
+        if (!checkOnGround(p2.x, p2.y)) triggerRespawn(p2);
+
+        // Fireball movement and simple hits
+        fireballs = fireballs.filter(fb => {
+            fb.x += fb.vx;
+            let target = fb.owner === 1 ? p2 : p1;
+            let d = Math.hypot(target.x - fb.x, target.y - fb.y);
+
+            if (d < target.radius + fb.r + 10) {
+                // Apply a direct position push away instead of complex acceleration vectors
+                target.x += fb.vx * 8;
+                // Delete blocks near the impact point
+                bridges = bridges.filter(b => Math.hypot((b.x + 20) - fb.x, (b.y + 20) - fb.y) > 60);
+                return false;
+            }
+            return fb.x > 0 && fb.x < canvas.width;
+        });
+
+        // Basic Sword Melee Pushback
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) < (p1.radius + p2.radius + 5)) {
+            let angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            p2.x += Math.cos(angle) * 30;
+            p1.x -= Math.cos(angle) * 30;
         }
 
-        // Procedural generation fallback
-        for (let x = -12; x <= 12; x++) {
-            for (let z = -12; z <= 12; z++) {
-                const height = Math.floor((Math.sin(x*0.3)+Math.cos(z*0.3))*1.5)+3;
-                for (let y = 0; y <= height; y++) spawnInstanceBlock(x,y,z, y === height ? 1 : (y < height-2 ? 3 : 2));
-            }
+        // Bed breaking checks
+        if (beds.blue.active && p2.x >= beds.blue.x && p2.x <= beds.blue.x + beds.blue.w && p2.y >= beds.blue.y && p2.y <= beds.blue.y + beds.blue.h) {
+            beds.blue.active = false; p1.bedAlive = false;
+        }
+        if (beds.red.active && p1.x >= beds.red.x && p1.x <= beds.red.x + beds.red.w && p1.y >= beds.red.y && p1.y <= beds.red.y + beds.red.h) {
+            beds.red.active = false; p2.bedAlive = false;
+        }
+    }
+
+    // --- ENGINE GRAPHICS RENDERING ---
+    function renderGame() {
+        // Force background paint clear
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw green islands
+        islands.forEach(isl => {
+            ctx.fillStyle = isl.color;
+            ctx.fillRect(isl.x, isl.y, isl.w, isl.h);
+            
+            // Details
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillText(isl.name, isl.x + 15, isl.y + 25);
+        });
+
+        // Draw bridges
+        bridges.forEach(b => {
+            ctx.fillStyle = b.color;
+            ctx.fillRect(b.x, b.y, b.w, b.h);
+            ctx.strokeStyle = '#ffffff';
+            ctx.strokeRect(b.x, b.y, b.w, b.h);
+        });
+
+        // Draw beds
+        if (beds.blue.active) {
+            ctx.fillStyle = beds.blue.color; ctx.fillRect(beds.blue.x, beds.blue.y, beds.blue.w, beds.blue.h);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText("BLUE BED", beds.blue.x - 2, beds.blue.y - 8);
+        }
+        if (beds.red.active) {
+            ctx.fillStyle = beds.red.color; ctx.fillRect(beds.red.x, beds.red.y, beds.red.w, beds.red.h);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText("RED BED", beds.red.x - 2, beds.red.y - 8);
         }
 
-        // --- Controls & Mechanics ---
-        const keyState = { w:false, a:false, s:false, d:false, space:false };
-        let playerYVelocity = 0, speed = 6.5, gravity = 22.0;
-        document.addEventListener('keydown', (e) => {
-            if (['w','a','s','d'].includes(e.key.toLowerCase())) keyState[e.key.toLowerCase()] = true;
-            if (e.code === 'Space') keyState.space = true;
-            if (['1','2','3','4'].includes(e.key)) {
-                document.querySelectorAll('.slot').forEach(el => el.classList.remove('active'));
-                activeBlockType = parseInt(e.key);
-                document.getElementById(`slot-${activeBlockType}`).classList.add('active');
-            }
-        });
-        document.addEventListener('keyup', (e) => {
-            if (['w','a','s','d'].includes(e.key.toLowerCase())) keyState[e.key.toLowerCase()] = false;
-            if (e.code === 'Space') keyState.space = false;
+        // Draw fireballs
+        fireballs.forEach(fb => {
+            ctx.fillStyle = '#ea580c';
+            ctx.beginPath(); ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI * 2); ctx.fill();
         });
 
-        // --- Interaction & Loop ---
-        const raycaster = new THREE.Raycaster();
-        document.addEventListener('mousedown', (e) => {
-            if (!controls.isLocked) return;
-            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-            const intersects = raycaster.intersectObjects(blocksArray);
-            if (intersects.length > 0) {
-                if (e.button === 0) { // Destroy
-                    const obj = intersects[0].object;
-                    scene.remove(obj);
-                    blockGridMap.delete(createGridKey(obj.position.x, obj.position.y, obj.position.z));
-                    blocksArray.splice(blocksArray.indexOf(obj), 1);
-                } else if (e.button === 2) { // Build
-                    const pos = intersects[0].object.position.clone().add(intersects[0].face.normal);
-                    spawnInstanceBlock(pos.x, pos.y, pos.z, activeBlockType);
-                }
-            }
-        });
-        document.addEventListener('contextmenu', e => e.preventDefault());
+        // Draw P1 (Blue)
+        ctx.fillStyle = p1.color;
+        ctx.beginPath(); ctx.arc(p1.x, p1.y, p1.radius, 0, Math.PI * 2); ctx.fill();
+        
+        // Draw P2 (Red)
+        ctx.fillStyle = p2.color;
+        ctx.beginPath(); ctx.arc(p2.x, p2.y, p2.radius, 0, Math.PI * 2); ctx.fill();
 
-        const clock = new THREE.Clock();
-        function loop() {
-            requestAnimationFrame(loop);
-            const delta = Math.min(clock.getDelta(), 0.1);
-            if (controls.isLocked) {
-                if (keyState.w) controls.moveForward(speed * delta);
-                if (keyState.s) controls.moveForward(-speed * delta);
-                if (keyState.a) controls.moveRight(-speed * delta);
-                if (keyState.d) controls.moveRight(speed * delta);
-                playerYVelocity -= gravity * delta;
-                camera.position.y += playerYVelocity * delta;
-                if (camera.position.y < -30) camera.position.set(0, 15, 0);
-                // Simple collision check
-                if (camera.position.y < 5) { playerYVelocity = 0; camera.position.y = 5; }
-            }
-            renderer.render(scene, camera);
-        }
-        loop();
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
+        // Canvas Overlaid text instructions
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`P1 Bed: ${p1.bedAlive ? "OK" : "BROKEN"} | Controls: WASD to Move, E to Build, Q to Shoot`, 20, 30);
+        ctx.fillText(`P2 Bed: ${p2.bedAlive ? "OK" : "BROKEN"} | Controls: Arrows to Move, 1 to Build, 0 to Shoot`, 480, 30);
+    }
+
+    // --- MAIN ENGINE PIPELINE ---
+    function runLoop() {
+        updateGame();
+        renderGame();
+        requestAnimationFrame(runLoop);
+    }
+
+    // Starts loop running immediately
+    runLoop();
+</script>
+
 </body>
 </html>
