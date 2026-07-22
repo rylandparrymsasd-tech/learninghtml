@@ -2,229 +2,252 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BedWars 2D - Fixed Layout</title>
+    <title>BedWars 2D - Working Grid Edition</title>
     <style>
         body {
             margin: 0;
-            background: #0f172a;
-            font-family: system-ui, -apple-system, sans-serif;
+            background: #0b0f19;
+            font-family: monospace;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
             overflow: hidden;
+            user-select: none;
         }
         #game-box {
-            position: relative;
-            background: #1e293b;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
         }
         canvas {
             background: #020617;
             display: block;
-            border: 2px solid #475569;
+            border: 4px solid #334155;
+            border-radius: 6px;
+        }
+        #hud {
+            color: white;
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            width: 1000px;
         }
     </style>
 </head>
 <body>
 
 <div id="game-box">
-    <canvas id="gameCanvas" width="900" height="500"></canvas>
+    <div id="hud">
+        <span style="color: #38bdf8;">🔵 P1 Bed: <span id="p1b">OK</span> | HP: <span id="p1h">100</span></span>
+        <span id="win-msg" style="color: #4ade80; font-weight: bold;">GRID COMBAT ACTIVE</span>
+        <span style="color: #f43f5e;">🔴 P2 Bed: <span id="p2b">OK</span> | HP: <span id="p2h">100</span></span>
+    </div>
+    <canvas id="gameCanvas" width="1000" height="400"></canvas>
 </div>
 
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // --- HIGH VISIBILITY STABLE PLATFORMS ---
-    // Pure bounding boxes: If player is inside these coordinates, they are on solid ground.
-    const islands = [
-        { x: 30, y: 150, w: 220, h: 200, color: '#16a34a', name: 'BLUE BASE' },
-        { x: 650, y: 150, w: 220, h: 200, color: '#16a34a', name: 'RED BASE' },
-        { x: 320, y: 100, w: 260, h: 300, color: '#15803d', name: 'CENTER MID' }
+    const GRID_SIZE = 40;
+    const COLS = 25;
+    const ROWS = 10;
+
+    let gameOver = false;
+
+    // --- PLAYERS CONFIGURATION ---
+    let p1 = { id: 1, cx: 2, cy: 6, hp: 100, color: '#38bdf8', bedAlive: true, spawnX: 2, spawnY: 6 };
+    let p2 = { id: 2, cx: 22, cy: 6, hp: 100, color: '#f43f5e', bedAlive: true, spawnX: 22, spawnY: 6 };
+
+    // --- FULLY COMPILING STATIC GRID MATRIX LAYER ---
+    // 0 = Air Void, 1 = Blue Grass, 2 = Red Grass, 3 = Center Emerald Ground, 4 = P1 Blocks, 5 = P2 Blocks
+    let map = [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,0,0,0,0,3,3,3,3,3,3,3,0,0,0,0,2,2,2,2,2],
+        [1,1,1,1,1,0,0,0,0,3,3,3,3,3,3,3,0,0,0,0,2,2,2,2,2],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ];
 
-    // Built blocks array (simplified)
-    let bridges = [];
-    let fireballs = [];
-    let keys = {};
-
-    // --- PLAYER CONFIGURATION ---
-    let p1 = { id: 1, x: 120, y: 250, radius: 15, speed: 4, color: '#0ea5e9', facing: 1, bedAlive: true, spawnX: 120, spawnY: 250 };
-    let p2 = { id: 2, x: 780, y: 250, radius: 15, speed: 4, color: '#f43f5e', facing: -1, bedAlive: true, spawnX: 780, spawnY: 250 };
-
-    // --- TEAM MATCH BEDS ---
+    // --- BEDS OBJECTIVES FIXED (Sitting directly on the base islands) ---
     let beds = {
-        blue: { x: 50, y: 230, w: 50, h: 40, active: true, color: '#2563eb' },
-        red: { x: 800, y: 230, w: 50, h: 40, active: true, color: '#dc2626' }
+        blue: { cx: 0, cy: 6, active: true, color: '#0284c7' },
+        red: { cx: 24, cy: 6, active: true, color: '#dc2626' }
     };
 
-    // --- INPUT REGISTER ---
+    let fireballs = [];
+
+    // --- REBUILT ACTION ROUTINE MAPPINGS ---
     window.addEventListener('keydown', e => {
+        if (gameOver) return;
         const k = e.key.toLowerCase();
-        keys[k] = true;
 
-        // Action Keys (Instant click)
-        if (k === 'e') placeBridgeSegment(p1);
-        if (k === 'q') launchFireball(p1, 1);
-        if (k === '1') placeBridgeSegment(p2);
-        if (k === '0') launchFireball(p2, -1);
+        // Player 1 Control Directives
+        if (k === 'a') movePlayer(p1, -1, 0);
+        if (k === 'd') movePlayer(p1, 1, 0);
+        if (k === 'w') movePlayer(p1, 0, -1);
+        if (k === 's') movePlayer(p1, 0, 1);
+        if (k === 'e') placeCube(p1, 1);
+        if (k === 'q') spawnFireball(p1, 1);
+
+        // Player 2 Control Directives (0 = Build, 9 = Shoot)
+        if (e.key === 'ArrowLeft') movePlayer(p2, -1, 0);
+        if (e.key === 'ArrowRight') movePlayer(p2, 1, 0);
+        if (e.key === 'ArrowUp') movePlayer(p2, 0, -1);
+        if (e.key === 'ArrowDown') movePlayer(p2, 0, 1);
+        if (k === '0') placeCube(p2, -1);
+        if (k === '9') spawnFireball(p2, -1);
     });
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-    // --- REBUILT SIMPLIFIED COLLISION LOGIC ---
-    function checkOnGround(x, y) {
-        // Check natural solid islands
-        let standingOnIsland = islands.some(isl => x >= isl.x && x <= isl.x + isl.w && y >= isl.y && y <= isl.y + isl.h);
-        if (standingOnIsland) return true;
+    function movePlayer(p, dx, dy) {
+        if (p.isDead) return;
+        
+        let targetX = p.cx + dx;
+        let targetY = p.cy + dy;
 
-        // Check player built blocks
-        let standingOnBridge = bridges.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-        return standingOnBridge;
-    }
+        if (targetX < 0 || targetX >= COLS || targetY < 0 || targetY >= ROWS) return;
 
-    function placeBridgeSegment(player) {
-        // Places a generous 40x40 block right in front of where the player faces
-        let bx = player.x + (player.facing * 25) - 20;
-        let by = player.y - 20;
-        bridges.push({ x: bx, y: by, w: 40, h: 40, color: player.id === 1 ? '#60a5fa' : '#fb7185' });
-    }
+        p.cx = targetX;
+        p.cy = targetY;
 
-    function launchFireball(player, dir) {
-        fireballs.push({ x: player.x, y: player.y, vx: dir * 7, r: 8, owner: player.id });
-    }
+        // Check void air cells instantly
+        if (map[p.cy][p.cx] === 0) {
+            killPlayer(p);
+            return;
+        }
 
-    function triggerRespawn(player) {
-        player.x = player.spawnX;
-        player.y = player.spawnY;
+        // Base Target Bed Destruction
+        if (p.id === 1 && beds.red.active && p.cx === beds.red.cx && p.cy === beds.red.cy) {
+            beds.red.active = false; p2.bedAlive = false; document.getElementById('p2b').innerText = "BROKEN";
+        }
+        if (p.id === 2 && beds.blue.active && p.cx === beds.blue.cx && p.cy === beds.blue.cy) {
+            beds.blue.active = false; p1.bedAlive = false; document.getElementById('p1b').innerText = "BROKEN";
+        }
 
-        if (!player.bedAlive) {
-            alert(`GAME OVER: Player ${player.id === 1 ? '2 (Red)' : '1 (Blue)'} wins!`);
-            // Reset world
-            beds.blue.active = true; beds.red.active = true;
-            p1.bedAlive = true; p2.bedAlive = true;
-            bridges = []; fireballs = [];
+        // Close proximity melee bumper collisions
+        let opponent = p.id === 1 ? p2 : p1;
+        if (p.cx === opponent.cx && p.cy === opponent.cy) {
+            p.cx -= dx; p.cy -= dy; 
+            damagePlayer(opponent, 15);
         }
     }
 
-    // --- GAME PROCESS ENGINE ---
-    function updateGame() {
-        // Player 1 Engine (WASD)
-        if (keys['w']) p1.y -= p1.speed;
-        if (keys['s']) p1.y += p1.speed;
-        if (keys['a']) { p1.x -= p1.speed; p1.facing = -1; }
-        if (keys['d']) { p1.x += p1.speed; p1.facing = 1; }
+    function placeCube(p, sideOffset) {
+        if (p.isDead) return;
+        let lx = p.cx + sideOffset;
+        if (lx >= 0 && lx < COLS) {
+            if (map[p.cy][lx] === 0) {
+                map[p.cy][lx] = p.id === 1 ? 4 : 5;
+            }
+        }
+    }
 
-        // Player 2 Engine (Arrow Keys)
-        if (keys['arrowup']) p2.y -= p2.speed;
-        if (keys['arrowdown']) p2.y += p2.speed;
-        if (keys['arrowleft']) { p2.x -= p2.speed; p2.facing = -1; }
-        if (keys['arrowright']) { p2.x += p2.speed; p2.facing = 1; }
+    function spawnFireball(p, direction) {
+        if (p.isDead) return;
+        fireballs.push({ cx: p.cx, cy: p.cy, dx: direction, owner: p.id });
+    }
 
-        // Fall check (Only checks if they aren't on safe ground)
-        if (!checkOnGround(p1.x, p1.y)) triggerRespawn(p1);
-        if (!checkOnGround(p2.x, p2.y)) triggerRespawn(p2);
+    function damagePlayer(p, amount) {
+        if (p.isDead || gameOver) return;
+        p.hp -= amount;
+        if (p.hp < 0) p.hp = 0;
+        
+        document.getElementById(`p${p.id}h`).innerText = p.hp;
+        if (p.hp <= 0) killPlayer(p);
+    }
 
-        // Fireball movement and simple hits
+    function killPlayer(p) {
+        if (!p.bedAlive) {
+            p.isDead = true;
+            gameOver = true;
+            document.getElementById('win-msg').innerText = `PLAYER ${p.id === 1 ? '2 (RED)' : '1 (BLUE)'} WINS!`;
+        } else {
+            p.cx = p.spawnX;
+            p.cy = p.spawnY;
+            p.hp = 100;
+            document.getElementById(`p${p.id}h`).innerText = p.hp;
+        }
+    }
+
+    // --- GAME ENGINE PROJECTILE LOGIC ---
+    function updateGameEngine() {
+        if (gameOver) return;
+
         fireballs = fireballs.filter(fb => {
-            fb.x += fb.vx;
-            let target = fb.owner === 1 ? p2 : p1;
-            let d = Math.hypot(target.x - fb.x, target.y - fb.y);
+            fb.cx += fb.dx;
+            if (fb.cx < 0 || fb.cx >= COLS) return false;
 
-            if (d < target.radius + fb.r + 10) {
-                // Apply a direct position push away instead of complex acceleration vectors
-                target.x += fb.vx * 8;
-                // Delete blocks near the impact point
-                bridges = bridges.filter(b => Math.hypot((b.x + 20) - fb.x, (b.y + 20) - fb.y) > 60);
+            let enemy = fb.owner === 1 ? p2 : p1;
+            if (fb.cx === enemy.cx && fb.cy === enemy.cy) {
+                damagePlayer(enemy, 35);
                 return false;
             }
-            return fb.x > 0 && fb.x < canvas.width;
+
+            if (map[fb.cy][fb.cx] === 4 || map[fb.cy][fb.cx] === 5) {
+                map[fb.cy][fb.cx] = 0; 
+                return false;
+            }
+
+            return true;
         });
-
-        // Basic Sword Melee Pushback
-        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) < (p1.radius + p2.radius + 5)) {
-            let angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-            p2.x += Math.cos(angle) * 30;
-            p1.x -= Math.cos(angle) * 30;
-        }
-
-        // Bed breaking checks
-        if (beds.blue.active && p2.x >= beds.blue.x && p2.x <= beds.blue.x + beds.blue.w && p2.y >= beds.blue.y && p2.y <= beds.blue.y + beds.blue.h) {
-            beds.blue.active = false; p1.bedAlive = false;
-        }
-        if (beds.red.active && p1.x >= beds.red.x && p1.x <= beds.red.x + beds.red.w && p1.y >= beds.red.y && p1.y <= beds.red.y + beds.red.h) {
-            beds.red.active = false; p2.bedAlive = false;
-        }
     }
 
-    // --- ENGINE GRAPHICS RENDERING ---
-    function renderGame() {
-        // Force background paint clear
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // --- 3D GRID CUBE SHADING GRAPHICS ---
+    function draw3DCube(x, y, w, h, base, top, shadow) {
+        ctx.fillStyle = base; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = top;  ctx.fillRect(x, y, w, 4);
+        ctx.fillStyle = shadow; ctx.fillRect(x + w - 4, y, 4, h); ctx.fillRect(x, y + h - 4, w, 4);
+        ctx.strokeStyle = '#020617'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+    }
 
-        // Draw green islands
-        islands.forEach(isl => {
-            ctx.fillStyle = isl.color;
-            ctx.fillRect(isl.x, isl.y, isl.w, isl.h);
-            
-            // Details
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText(isl.name, isl.x + 15, isl.y + 25);
-        });
+    // --- MAIN RENDER LOOP ---
+    function drawScreenFrame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw bridges
-        bridges.forEach(b => {
-            ctx.fillStyle = b.color;
-            ctx.fillRect(b.x, b.y, b.w, b.h);
-            ctx.strokeStyle = '#ffffff';
-            ctx.strokeRect(b.x, b.y, b.w, b.h);
-        });
+        // Render Active Grid Data
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let val = map[r][c];
+                let px = c * GRID_SIZE;
+                let py = r * GRID_SIZE;
+
+                if (val === 1 || val === 2) draw3DCube(px, py, GRID_SIZE, GRID_SIZE, '#16a34a', '#4ade80', '#14532d'); 
+                if (val === 3) draw3DCube(px, py, GRID_SIZE, GRID_SIZE, '#15803d', '#22c55e', '#166534'); 
+                if (val === 4) draw3DCube(px, py, GRID_SIZE, GRID_SIZE, '#2563eb', '#60a5fa', '#1d4ed8'); 
+                if (val === 5) draw3DCube(px, py, GRID_SIZE, GRID_SIZE, '#db2777', '#f472b6', '#9d174d'); 
+            }
+        }
 
         // Draw beds
-        if (beds.blue.active) {
-            ctx.fillStyle = beds.blue.color; ctx.fillRect(beds.blue.x, beds.blue.y, beds.blue.w, beds.blue.h);
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText("BLUE BED", beds.blue.x - 2, beds.blue.y - 8);
-        }
-        if (beds.red.active) {
-            ctx.fillStyle = beds.red.color; ctx.fillRect(beds.red.x, beds.red.y, beds.red.w, beds.red.h);
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText("RED BED", beds.red.x - 2, beds.red.y - 8);
-        }
+        if (beds.blue.active) draw3DCube(beds.blue.cx * GRID_SIZE, beds.blue.cy * GRID_SIZE, GRID_SIZE, GRID_SIZE, '#1e40af', '#3b82f6', '#172554');
+        if (beds.red.active) draw3DCube(beds.red.cx * GRID_SIZE, beds.red.cy * GRID_SIZE, GRID_SIZE, GRID_SIZE, '#991b1b', '#ef4444', '#450a0a');
 
         // Draw fireballs
         fireballs.forEach(fb => {
-            ctx.fillStyle = '#ea580c';
-            ctx.beginPath(); ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath();
+            ctx.arc((fb.cx * GRID_SIZE) + GRID_SIZE/2, (fb.cy * GRID_SIZE) + GRID_SIZE/2, 10, 0, Math.PI*2);
+            ctx.fill();
         });
 
-        // Draw P1 (Blue)
-        ctx.fillStyle = p1.color;
-        ctx.beginPath(); ctx.arc(p1.x, p1.y, p1.radius, 0, Math.PI * 2); ctx.fill();
-        
-        // Draw P2 (Red)
-        ctx.fillStyle = p2.color;
-        ctx.beginPath(); ctx.arc(p2.x, p2.y, p2.radius, 0, Math.PI * 2); ctx.fill();
-
-        // Canvas Overlaid text instructions
-        ctx.fillStyle = '#fff';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(`P1 Bed: ${p1.bedAlive ? "OK" : "BROKEN"} | Controls: WASD to Move, E to Build, Q to Shoot`, 20, 30);
-        ctx.fillText(`P2 Bed: ${p2.bedAlive ? "OK" : "BROKEN"} | Controls: Arrows to Move, 1 to Build, 0 to Shoot`, 480, 30);
+        // Draw Player Cubes
+        if (!p1.isDead) draw3DCube((p1.cx * GRID_SIZE) + 8, (p1.cy * GRID_SIZE) + 4, 24, 32, '#0ea5e9', '#38bdf8', '#0369a1');
+        if (!p2.isDead) draw3DCube((p2.cx * GRID_SIZE) + 8, (p2.cy * GRID_SIZE) + 4, 24, 32, '#f43f5e', '#fb7185', '#be123c');
     }
 
-    // --- MAIN ENGINE PIPELINE ---
-    function runLoop() {
-        updateGame();
-        renderGame();
-        requestAnimationFrame(runLoop);
+    // Engine loop initialization
+    setInterval(updateGameEngine, 100); 
+    function renderLoop() {
+        drawScreenFrame();
+        requestAnimationFrame(renderLoop);
     }
-
-    // Starts loop running immediately
-    runLoop();
+    renderLoop();
 </script>
 
 </body>

@@ -1,14 +1,255 @@
 <!DOCTYPE html>
-<html>
-  <title>Test</title>
-  <p>hello. this a test by ry+rhys.</p>
-  <p>look at this:<br/>
-  I can indent.</p>
-  <div style="color: green";>
-  <p>look at the color</p>
-  </div>
-  <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJthqw4QeEkWWWps-1iHAp7ECPNk86uvEj2vTNYQDxWA&s=10">
-  <div style="color: darkblue"
-    <p>Pizza is cool.</p>
-  </div>
-</html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BedWars 2D - Guaranteed Working Edition</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0b0f19;
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        #game-box {
+            text-align: center;
+        }
+        canvas {
+            background: #020617;
+            display: block;
+            border: 4px solid #334155;
+            border-radius: 6px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        #hud {
+            color: white;
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            width: 1000px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+        }
+        #controls-hint {
+            color: #4ade80;
+            margin-top: 10px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-box">
+    <div id="hud">
+        <span style="color: #38bdf8;">🔵 P1 Bed: <span id="p1b">OK</span> | HP: <span id="p1h">100</span> | Fireball: <span id="p1f">READY</span></span>
+        <span id="win-msg" style="color: #4ade80; font-weight: bold;">ENGINE FIXED - PLAYABLE</span>
+        <span style="color: #f43f5e;">🔴 P2 Bed: <span id="p2b">OK</span> | HP: <span id="p2h">100</span> | Fireball: <span id="p2f">READY</span></span>
+    </div>
+    <canvas id="gameCanvas" width="1000" height="400"></canvas>
+    <div id="controls-hint">
+        🚀 [P1 Blue]: WASD to move (Auto-Bridges voids!), SPACE to place block behind, SHIFT to shoot<br>
+        🚀 [P2 Red]: ARROWS to move (Auto-Bridges voids!), ENTER to place block behind, M KEY to shoot
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const GRID_SIZE = 40;
+    const COLS = 25;
+    const ROWS = 10;
+    let gameOver = false;
+
+    // === 1. EXPLICIT 2D NUMERICAL MATRIX GRID (NO EMPTY PLACEHOLDERS) ===
+    // 0 = Sky/Void, 1 = Blue Grass, 2 = Red Grass, 3 = Emerald Center Island, 4 = P1 Bridge, 5 = P2 Bridge
+    let map = [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2],
+        [1,1,1,1,1,1,1,0,0,0,3,3,3,3,3,0,0,0,0,2,2,2,2,2,2],
+        [1,1,1,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0,0,2,2,2,2,2,2],
+        [1,1,1,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0,0,2,2,2,2,2,2],
+        [1,1,1,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0,0,2,2,2,2,2,2],
+        [1,1,1,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0,0,2,2,2,2,2,2]
+    ];
+
+    // === 2. PLAYER POSITIONS MATCHING SAFE CODES ===
+    let p1 = { id: 1, cx: 2, cy: 4, hp: 100, bedAlive: true, spawnX: 2, spawnY: 4, dx: 1, dy: 0, lastShot: 0 };
+    let p2 = { id: 2, cx: 22, cy: 4, hp: 100, bedAlive: true, spawnX: 22, spawnY: 4, dx: -1, dy: 0, lastShot: 0 };
+    let p1Bed = { x: 1, y: 4 };
+    let p2Bed = { x: 23, y: 4 };
+
+    let fireballs = [];
+    let fireFrameCounter = 0;
+
+    // --- PIXEL RECTANGLE PAINTERS ---
+    function drawPixelTile(x, y, baseColor, accentColor, patternType) {
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+        ctx.fillStyle = accentColor;
+        const pSize = 5; 
+        if (patternType === 'grass') {
+            for (let i = 0; i < GRID_SIZE; i += 10) {
+                ctx.fillRect(x + i, y, pSize, pSize);
+                ctx.fillRect(x + i + 5, y + 5, pSize, pSize);
+            }
+        } else if (patternType === 'crystal') {
+            ctx.fillRect(x + 10, y + 10, pSize*2, pSize*2);
+            ctx.fillRect(x + 25, y + 25, pSize*2, pSize*2);
+        } else if (patternType === 'wool') {
+            ctx.strokeRect(x + 2, y + 2, GRID_SIZE - 4, GRID_SIZE - 4);
+        }
+    }
+
+    function drawPixelPlayer(player, mainColor, skinColor) {
+        let px = player.cx * GRID_SIZE;
+        let py = player.cy * GRID_SIZE;
+        ctx.fillStyle = mainColor;
+        ctx.fillRect(px + 8, py + 2, 24, 10);
+        ctx.fillStyle = skinColor;
+        ctx.fillRect(px + 10, py + 12, 20, 10);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(px + 12, py + 14, 4, 4);
+        ctx.fillRect(px + 24, py + 14, 4, 4);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(px + 14, py + 14, 2, 4);
+        ctx.fillRect(px + 26, py + 14, 2, 4);
+        ctx.fillStyle = mainColor;
+        ctx.fillRect(px + 6, py + 22, 28, 16);
+    }
+
+    function drawPixelBed(bx, by, primaryColor) {
+        let x = bx * GRID_SIZE;
+        let y = by * GRID_SIZE;
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(x + 4, y + 12, 12, 16);
+        ctx.fillStyle = primaryColor;
+        ctx.fillRect(x + 16, y + 12, 20, 16);
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(x + 2, y + 28, 4, 6);
+        ctx.fillRect(x + 34, y + 28, 4, 6);
+    }
+
+    function drawFireballs() {
+        fireballs.forEach(fb => {
+            let fx = fb.x * GRID_SIZE + (GRID_SIZE / 2);
+            let fy = fb.y * GRID_SIZE + (GRID_SIZE / 2);
+            ctx.fillStyle = '#f97316';
+            ctx.fillRect(fx - 12, fy - 12, 24, 24);
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(fx - 6, fy - 6, 12, 12);
+        });
+    }
+
+    function render() {
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let tile = map[r][c];
+                let tx = c * GRID_SIZE;
+                let ty = r * GRID_SIZE;
+
+                if (tile === 1) drawPixelTile(tx, ty, '#1d4ed8', '#1e40af', 'grass');
+                else if (tile === 2) drawPixelTile(tx, ty, '#be123c', '#9f1239', 'grass');
+                else if (tile === 3) drawPixelTile(tx, ty, '#047857', '#065f46', 'crystal');
+                else if (tile === 4) drawPixelTile(tx, ty, '#60a5fa', '#3b82f6', 'wool');
+                else if (tile === 5) drawPixelTile(tx, ty, '#f87171', '#ef4444', 'wool');
+            }
+        }
+
+        if (p1.bedAlive) drawPixelBed(p1Bed.x, p1Bed.y, '#3b82f6');
+        if (p2.bedAlive) drawPixelBed(p2Bed.x, p2Bed.y, '#ef4444');
+
+        if (p1.cx >= 0) drawPixelPlayer(p1, '#0284c7', '#ffedd5');
+        if (p2.cx >= 0) drawPixelPlayer(p2, '#dc2626', '#ffedd5');
+
+        drawFireballs();
+    }
+
+    function updatePhysics() {
+        if (gameOver) return;
+
+        fireFrameCounter++;
+        if (fireFrameCounter % 4 === 0) {
+            for (let i = fireballs.length - 1; i >= 0; i--) {
+                let fb = fireballs[i];
+                fb.x += fb.dx;
+                fb.y += fb.dy;
+
+                if (fb.x < 0 || fb.x >= COLS || fb.y < 0 || fb.y >= ROWS) {
+                    fireballs.splice(i, 1);
+                    continue;
+                }
+
+                let targetTile = map[fb.y][fb.x];
+                if (targetTile === 4 || targetTile === 5) {
+                    map[fb.y][fb.x] = 0; 
+                    fireballs.splice(i, 1);
+                } else if (targetTile === 1 || targetTile === 2 || targetTile === 3) {
+                    fireballs.splice(i, 1);
+                }
+            }
+        }
+
+        if (p1.cx >= 0 && map[p1.cy][p1.cx] === 0) {
+            p1.hp = 100; p1.cx = p1.bedAlive ? p1.spawnX : -10; p1.cy = p1.bedAlive ? p1.spawnY : -10;
+        }
+        if (p2.cx >= 0 && map[p2.cy][p2.cx] === 0) {
+            p2.hp = 100; p2.cx = p2.bedAlive ? p2.spawnX : -10; p2.cy = p2.bedAlive ? p2.spawnY : -10;
+        }
+
+        if (p1.cx === p2.cx && p1.cy === p2.cy && p1.cx >= 0) {
+            p1.hp -= 25; p2.hp -= 25;
+            if (p1.hp <= 0) { p1.hp = 100; p1.cx = p1.bedAlive ? p1.spawnX : -10; p1.cy = p1.bedAlive ? p1.spawnY : -10; }
+            if (p2.hp <= 0) { p2.hp = 100; p2.cx = p2.bedAlive ? p2.spawnX : -10; p2.cy = p2.bedAlive ? p2.spawnY : -10; }
+        }
+
+        if (p1.cx === p2Bed.x && p1.cy === p2Bed.y && p2.bedAlive) p2.bedAlive = false;
+        if (p2.cx === p1Bed.x && p2.cy === p1Bed.y && p1.bedAlive) p1.bedAlive = false;
+
+        if (!p1.bedAlive && p1.cx < 0) {
+            document.getElementById('win-msg').innerText = "🔴 RED PLAYER WINS!";
+            document.getElementById('win-msg').style.color = "#f43f5e";
+            gameOver = true;
+        } else if (!p2.bedAlive && p2.cx < 0) {
+            document.getElementById('win-msg').innerText = "🔵 BLUE PLAYER WINS!";
+            document.getElementById('win-msg').style.color = "#38bdf8";
+            gameOver = true;
+        }
+
+        let now = Date.now();
+        let p1Cd = Math.max(0, Math.ceil((2000 - (now - p1.lastShot)) / 1000));
+        let p2Cd = Math.max(0, Math.ceil((2000 - (now - p2.lastShot)) / 1000));
+
+        document.getElementById('p1h').innerText = p1.hp;
+        document.getElementById('p2h').innerText = p2.hp;
+        document.getElementById('p1b').innerText = p1.bedAlive ? "OK" : "DESTROYED";
+        document.getElementById('p2b').innerText = p2.bedAlive ? "OK" : "DESTROYED";
+        document.getElementById('p1f').innerText = p1Cd === 0 ? "READY" : p1Cd + "s";
+        document.getElementById('p2f').innerText = p2Cd === 0 ? "READY" : p2Cd + "s";
+    }
+
+    function mainTick() {
+        updatePhysics();
+        render();
+        requestAnimationFrame(mainTick);
+    }
+
+    function movePlayerSecurely(player, dx, dy, blockSymbol) {
+        let nx = player.cx + dx;
+        let ny = player.cy + dy;
+        if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) {
+            if (map[ny][nx] === 0) {
+                map[ny][nx] = blockSymbol; 
+            }
